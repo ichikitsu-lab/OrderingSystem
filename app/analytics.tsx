@@ -383,24 +383,29 @@ export default function AnalyticsScreen() {
 
         Alert.alert('成功', `CSVファイル "${fileName}" をダウンロードしました`);
       } else {
-        const fileUri = FileSystem.cacheDirectory + fileName;
-        const bom = '\uFEFF';
-        await FileSystem.writeAsStringAsync(fileUri, bom + csvData, {
-          encoding: FileSystem.EncodingType.UTF8,
-        });
+        try {
+          const fileUri = FileSystem.cacheDirectory + fileName;
+          const bom = '\uFEFF';
 
-        const isAvailable = await Sharing.isAvailableAsync();
-        if (isAvailable) {
-          await Sharing.shareAsync(fileUri, {
-            mimeType: 'text/csv',
-            dialogTitle: '注文履歴CSVをエクスポート',
-            UTI: 'public.comma-separated-values-text',
+          await FileSystem.writeAsStringAsync(fileUri, bom + csvData, {
+            encoding: 'utf8',
           });
-        } else {
-          Alert.alert('エラー', '共有機能が利用できません');
-        }
 
-        Alert.alert('成功', `CSVファイル "${fileName}" を生成しました`);
+          const isAvailable = await Sharing.isAvailableAsync();
+          if (isAvailable) {
+            await Sharing.shareAsync(fileUri, {
+              mimeType: 'text/csv',
+              dialogTitle: '注文履歴CSVをエクスポート',
+              UTI: 'public.comma-separated-values-text',
+            });
+            Alert.alert('成功', `CSVファイル "${fileName}" を生成しました`);
+          } else {
+            Alert.alert('エラー', '共有機能が利用できません');
+          }
+        } catch (fsError) {
+          console.error('ファイルシステムエラー:', fsError);
+          throw fsError;
+        }
       }
     } catch (error) {
       console.error('CSV生成エラー:', error);
