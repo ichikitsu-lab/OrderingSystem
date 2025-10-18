@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Calendar, TrendingUp, DollarSign, ShoppingBag, ArrowLeft, Download, X, FileText } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystemLegacy from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useDatabase } from '@/hooks/useDatabase';
 
@@ -384,10 +384,10 @@ export default function AnalyticsScreen() {
         Alert.alert('成功', `CSVファイル "${fileName}" をダウンロードしました`);
       } else {
         try {
-          const fileUri = FileSystem.cacheDirectory + fileName;
+          const fileUri = FileSystemLegacy.cacheDirectory + fileName;
           const bom = '\uFEFF';
 
-          await FileSystem.writeAsStringAsync(fileUri, bom + csvData, {
+          await FileSystemLegacy.writeAsStringAsync(fileUri, bom + csvData, {
             encoding: 'utf8',
           });
 
