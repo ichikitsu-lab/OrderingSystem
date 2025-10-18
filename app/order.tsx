@@ -187,6 +187,59 @@ export default function OrderScreen() {
     }
   }, [currentTableId]);
 
+  // リアルタイム同期：注文の変更を監視
+  useEffect(() => {
+    if (!database || !currentTableId) return;
+
+    console.log('🔄 注文画面: リアルタイム同期を開始 - テーブルID:', currentTableId);
+    
+    // 注文の変更を監視
+    const ordersChannel = database.subscribeToOrders(async (payload) => {
+      console.log('📡 注文変更イベント受信:', payload.eventType, 'テーブルID:', payload.new?.table_id || payload.old?.table_id);
+      
+      // このテーブルの注文のみ処理
+      const relevantTableId = payload.new?.table_id || payload.old?.table_id;
+      if (relevantTableId !== currentTableId) {
+        console.log('⏭️ 他のテーブルの注文変更 - スキップ');
+        return;
+      }
+
+      // データベースから最新の注文を再読み込み
+      try {
+        console.log('🔄 最新の注文を再読み込み...');
+        const orders = await database.getOrdersByTable(currentTableId);
+        
+        // 注文をメニュー情報と統合
+        const formattedOrders: CartItem[] = [];
+        for (const order of orders) {
+          const menuItem = menuItems.find(item => item.id === order.menu_item_id);
+          if (menuItem) {
+            const existingItem = formattedOrders.find(item => item.id === menuItem.id);
+            if (existingItem) {
+              existingItem.quantity += order.quantity;
+            } else {
+              formattedOrders.push({
+                ...menuItem,
+                quantity: order.quantity,
+              });
+            }
+          }
+        }
+        
+        console.log('✅ 注文履歴更新完了:', formattedOrders.length, '品目');
+        setConfirmedOrders(formattedOrders);
+      } catch (error) {
+        console.error('注文再読み込みエラー:', error);
+      }
+    });
+
+    // クリーンアップ
+    return () => {
+      console.log('🔄 注文画面: リアルタイム同期を停止');
+      database.unsubscribe(ordersChannel);
+    };
+  }, [database, currentTableId, menuItems]);
+
   const addToPendingOrders = (item: MenuItem) => {
     // 削除されたメニューや提供停止中のメニューは注文不可
     if (item.isDeleted) {

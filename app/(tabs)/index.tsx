@@ -138,6 +138,64 @@ export default function TablesScreen() {
     }
   };
 
+  // リアルタイム同期：テーブル変更を監視
+  React.useEffect(() => {
+    if (!database) return;
+
+    console.log('🔄 リアルタイム同期を開始...');
+    
+    const tablesChannel = database.subscribeToTables((payload) => {
+      console.log('📡 テーブル変更イベント受信:', payload.eventType, payload.new);
+      
+      if (payload.eventType === 'INSERT') {
+        // 新しいテーブルが追加された
+        const newTable: Table = {
+          id: payload.new.id,
+          number: payload.new.number,
+          seats: payload.new.seats,
+          status: payload.new.status,
+          orderStartTime: payload.new.order_start_time ? new Date(payload.new.order_start_time) : undefined,
+          customerCount: payload.new.customer_count || undefined,
+          orders: [],
+          totalAmount: payload.new.total_amount,
+        };
+        setTables(prev => {
+          // 既に存在する場合は追加しない
+          if (prev.find(t => t.id === newTable.id)) return prev;
+          console.log('➕ 新しいテーブルを追加:', newTable.number);
+          return [...prev, newTable];
+        });
+      } else if (payload.eventType === 'UPDATE') {
+        // テーブルが更新された
+        setTables(prev => prev.map(t => {
+          if (t.id === payload.new.id) {
+            console.log('🔄 テーブル更新:', payload.new.number, '状態:', payload.new.status);
+            return {
+              ...t,
+              number: payload.new.number,
+              seats: payload.new.seats,
+              status: payload.new.status,
+              orderStartTime: payload.new.order_start_time ? new Date(payload.new.order_start_time) : undefined,
+              customerCount: payload.new.customer_count || undefined,
+              totalAmount: payload.new.total_amount,
+            };
+          }
+          return t;
+        }));
+      } else if (payload.eventType === 'DELETE') {
+        // テーブルが削除された
+        console.log('🗑️ テーブル削除:', payload.old.id);
+        setTables(prev => prev.filter(t => t.id !== payload.old.id));
+      }
+    });
+
+    // クリーンアップ
+    return () => {
+      console.log('🔄 リアルタイム同期を停止...');
+      database.unsubscribe(tablesChannel);
+    };
+  }, [database]);
+
   // データベース接続時にテーブルを読み込み
   React.useEffect(() => {
     if (database) {

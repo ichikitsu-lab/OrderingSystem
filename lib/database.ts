@@ -45,6 +45,54 @@ export interface OrderHistory {
 export class DatabaseService {
   constructor(private supabase: SupabaseClient) {}
 
+  // リアルタイム購読（テーブルの変更を監視）
+  subscribeToTables(callback: (payload: any) => void) {
+    console.log('📡 テーブルのリアルタイム購読を開始...');
+    const channel = this.supabase
+      .channel('tables-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tables' },
+        (payload) => {
+          console.log('📡 テーブル変更を検知:', payload);
+          callback(payload);
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 購読状態:', status);
+      });
+
+    return channel;
+  }
+
+  // リアルタイム購読（注文の変更を監視）
+  subscribeToOrders(callback: (payload: any) => void) {
+    console.log('📡 注文のリアルタイム購読を開始...');
+    const channel = this.supabase
+      .channel('orders-changes')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'orders' },
+        (payload) => {
+          console.log('📡 注文変更を検知:', payload);
+          callback(payload);
+        }
+      )
+      .subscribe((status) => {
+        console.log('📡 購読状態:', status);
+      });
+
+    return channel;
+  }
+
+  // 購読解除
+  async unsubscribe(channel: any) {
+    if (channel) {
+      console.log('📡 購読を解除...');
+      await this.supabase.removeChannel(channel);
+    }
+  }
+
   // テーブル操作
   async getTables(): Promise<Table[]> {
     const { data, error } = await this.supabase
