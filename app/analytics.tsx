@@ -52,7 +52,13 @@ export default function AnalyticsScreen() {
   const [isGeneratingCsv, setIsGeneratingCsv] = useState(false);
   const [startMonth, setStartMonth] = useState<string>('');
   const [endMonth, setEndMonth] = useState<string>('');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [startMonthForMonthly, setStartMonthForMonthly] = useState<string>('');
+  const [endMonthForMonthly, setEndMonthForMonthly] = useState<string>('');
   const [showDateRangeModal, setShowDateRangeModal] = useState(false);
+  const [showDailyRangeModal, setShowDailyRangeModal] = useState(false);
+  const [showMonthlyRangeModal, setShowMonthlyRangeModal] = useState(false);
   const [orderHistory, setOrderHistory] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { database, isConnected } = useDatabase();
@@ -102,6 +108,18 @@ export default function AnalyticsScreen() {
     return Array.from(months).sort().reverse();
   };
 
+  // 利用可能な日のリストを取得
+  const getAvailableDates = () => {
+    const orderHistory = getOrderHistory();
+    const dates = new Set<string>();
+    orderHistory.forEach((order) => {
+      const orderDate = new Date(order.timestamp || order.completed_at || '');
+      const date = orderDate.toISOString().substring(0, 10);
+      dates.add(date);
+    });
+    return Array.from(dates).sort().reverse();
+  };
+
   const formatMonthLabel = (month: string) => {
     const [year, monthNum] = month.split('-');
     return `${year}年${parseInt(monthNum)}月`;
@@ -110,9 +128,20 @@ export default function AnalyticsScreen() {
   // 日次データを取得
   const getDailyData = (): SalesData[] => {
     const orderHistory = getOrderHistory();
+    let filteredOrders = orderHistory;
+
+    // 期間フィルタを適用
+    if (startDate && endDate) {
+      filteredOrders = orderHistory.filter((order) => {
+        const orderDate = new Date(order.timestamp || order.completed_at || '');
+        const orderDateKey = orderDate.toISOString().substring(0, 10);
+        return orderDateKey >= startDate && orderDateKey <= endDate;
+      });
+    }
+
     const dailyMap = new Map<string, { sales: number; orders: number }>();
 
-    orderHistory.forEach((order) => {
+    filteredOrders.forEach((order) => {
       const orderDate = new Date(order.timestamp || order.completed_at || '');
       const dateKey = orderDate.toISOString().substring(0, 10);
       const total = order.total || order.total_amount || 0;
@@ -138,9 +167,20 @@ export default function AnalyticsScreen() {
   // 月次データを取得
   const getMonthlyData = (): SalesData[] => {
     const orderHistory = getOrderHistory();
+    let filteredOrders = orderHistory;
+
+    // 期間フィルタを適用
+    if (startMonthForMonthly && endMonthForMonthly) {
+      filteredOrders = orderHistory.filter((order) => {
+        const orderDate = new Date(order.timestamp || order.completed_at || '');
+        const orderMonth = orderDate.toISOString().substring(0, 7);
+        return orderMonth >= startMonthForMonthly && orderMonth <= endMonthForMonthly;
+      });
+    }
+
     const monthlyMap = new Map<string, { sales: number; orders: number }>();
 
-    orderHistory.forEach((order) => {
+    filteredOrders.forEach((order) => {
       const orderDate = new Date(order.timestamp || order.completed_at || '');
       const monthKey = orderDate.toISOString().substring(0, 7);
       const total = order.total || order.total_amount || 0;
@@ -356,12 +396,22 @@ export default function AnalyticsScreen() {
       let periodLabel = '';
 
       if (selectedPeriod === 'daily') {
-        periodLabel = '日次';
+        if (startDate && endDate) {
+          const start = new Date(startDate).toLocaleDateString('ja-JP').replace(/\//g, '-');
+          const end = new Date(endDate).toLocaleDateString('ja-JP').replace(/\//g, '-');
+          periodLabel = `日次_${start}～${end}`;
+        } else {
+          periodLabel = '日次';
+        }
       } else if (selectedPeriod === 'monthly') {
-        periodLabel = '月次';
+        if (startMonthForMonthly && endMonthForMonthly) {
+          periodLabel = `月次_${formatMonthLabel(startMonthForMonthly)}～${formatMonthLabel(endMonthForMonthly)}`;
+        } else {
+          periodLabel = '月次';
+        }
       } else if (selectedPeriod === 'yearly') {
         if (startMonth && endMonth) {
-          periodLabel = `年次_${formatMonthLabel(startMonth)}-${formatMonthLabel(endMonth)}`;
+          periodLabel = `年次_${formatMonthLabel(startMonth)}～${formatMonthLabel(endMonth)}`;
         } else {
           periodLabel = '年次';
         }
@@ -566,6 +616,52 @@ export default function AnalyticsScreen() {
           </TouchableOpacity>
         </View>
 
+        {selectedPeriod === 'daily' && (
+          <View style={styles.dateRangeInfo}>
+            {startDate && endDate ? (
+              <>
+                <Text style={styles.dateRangeText}>
+                  期間: {new Date(startDate).toLocaleDateString('ja-JP')} 〜 {new Date(endDate).toLocaleDateString('ja-JP')}
+                </Text>
+                <TouchableOpacity onPress={() => setShowDailyRangeModal(true)}>
+                  <Text style={styles.changeRangeButton}>変更</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={styles.selectRangeButton}
+                onPress={() => setShowDailyRangeModal(true)}
+              >
+                <Calendar size={20} color="#8B4513" />
+                <Text style={styles.selectRangeButtonText}>期間を選択</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
+        {selectedPeriod === 'monthly' && (
+          <View style={styles.dateRangeInfo}>
+            {startMonthForMonthly && endMonthForMonthly ? (
+              <>
+                <Text style={styles.dateRangeText}>
+                  期間: {formatMonthLabel(startMonthForMonthly)} 〜 {formatMonthLabel(endMonthForMonthly)}
+                </Text>
+                <TouchableOpacity onPress={() => setShowMonthlyRangeModal(true)}>
+                  <Text style={styles.changeRangeButton}>変更</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={styles.selectRangeButton}
+                onPress={() => setShowMonthlyRangeModal(true)}
+              >
+                <Calendar size={20} color="#8B4513" />
+                <Text style={styles.selectRangeButtonText}>期間を選択</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         {selectedPeriod === 'yearly' && startMonth && endMonth && (
           <View style={styles.dateRangeInfo}>
             <Text style={styles.dateRangeText}>
@@ -731,6 +827,194 @@ export default function AnalyticsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* 日次期間選択モーダル */}
+      <Modal
+        visible={showDailyRangeModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowDailyRangeModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>日次期間設定</Text>
+              <TouchableOpacity
+                style={styles.modalHeaderButton}
+                onPress={() => setShowDailyRangeModal(false)}
+              >
+                <X size={20} color="#8B4513" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.dateRangeForm}>
+              <Text style={styles.formDescription}>
+                日次レポートの開始日と終了日を選択してください
+              </Text>
+
+              <Text style={styles.inputLabel}>開始日</Text>
+              <ScrollView style={styles.monthSelectionList}>
+                {getAvailableDates().map((date) => (
+                  <TouchableOpacity
+                    key={date}
+                    style={[
+                      styles.monthSelectionOption,
+                      startDate === date && styles.monthSelectionOptionSelected,
+                    ]}
+                    onPress={() => setStartDate(date)}
+                  >
+                    <Calendar size={20} color={startDate === date ? '#FFFFFF' : '#8B4513'} />
+                    <Text
+                      style={[
+                        styles.monthSelectionText,
+                        startDate === date && styles.monthSelectionTextSelected,
+                      ]}
+                    >
+                      {new Date(date).toLocaleDateString('ja-JP')}
+                    </Text>
+                    {startDate === date && <View style={styles.selectedIndicator} />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={styles.inputLabel}>終了日</Text>
+              <ScrollView style={styles.monthSelectionList}>
+                {getAvailableDates().map((date) => (
+                  <TouchableOpacity
+                    key={date}
+                    style={[
+                      styles.monthSelectionOption,
+                      endDate === date && styles.monthSelectionOptionSelected,
+                    ]}
+                    onPress={() => setEndDate(date)}
+                  >
+                    <Calendar size={20} color={endDate === date ? '#FFFFFF' : '#8B4513'} />
+                    <Text
+                      style={[
+                        styles.monthSelectionText,
+                        endDate === date && styles.monthSelectionTextSelected,
+                      ]}
+                    >
+                      {new Date(date).toLocaleDateString('ja-JP')}
+                    </Text>
+                    {endDate === date && <View style={styles.selectedIndicator} />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <TouchableOpacity
+                style={[styles.saveButton, (!startDate || !endDate) && styles.saveButtonDisabled]}
+                onPress={() => {
+                  if (startDate && endDate) {
+                    if (startDate > endDate) {
+                      Alert.alert('エラー', '開始日は終了日より前である必要があります');
+                      return;
+                    }
+                    setShowDailyRangeModal(false);
+                  }
+                }}
+                disabled={!startDate || !endDate}
+              >
+                <Text style={styles.saveButtonText}>設定</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 月次期間選択モーダル */}
+      <Modal
+        visible={showMonthlyRangeModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowMonthlyRangeModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>月次期間設定</Text>
+              <TouchableOpacity
+                style={styles.modalHeaderButton}
+                onPress={() => setShowMonthlyRangeModal(false)}
+              >
+                <X size={20} color="#8B4513" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.dateRangeForm}>
+              <Text style={styles.formDescription}>
+                月次レポートの開始月と終了月を選択してください
+              </Text>
+
+              <Text style={styles.inputLabel}>開始月</Text>
+              <ScrollView style={styles.monthSelectionList}>
+                {getAvailableMonths().map((month) => (
+                  <TouchableOpacity
+                    key={month}
+                    style={[
+                      styles.monthSelectionOption,
+                      startMonthForMonthly === month && styles.monthSelectionOptionSelected,
+                    ]}
+                    onPress={() => setStartMonthForMonthly(month)}
+                  >
+                    <Calendar size={20} color={startMonthForMonthly === month ? '#FFFFFF' : '#8B4513'} />
+                    <Text
+                      style={[
+                        styles.monthSelectionText,
+                        startMonthForMonthly === month && styles.monthSelectionTextSelected,
+                      ]}
+                    >
+                      {formatMonthLabel(month)}
+                    </Text>
+                    {startMonthForMonthly === month && <View style={styles.selectedIndicator} />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={styles.inputLabel}>終了月</Text>
+              <ScrollView style={styles.monthSelectionList}>
+                {getAvailableMonths().map((month) => (
+                  <TouchableOpacity
+                    key={month}
+                    style={[
+                      styles.monthSelectionOption,
+                      endMonthForMonthly === month && styles.monthSelectionOptionSelected,
+                    ]}
+                    onPress={() => setEndMonthForMonthly(month)}
+                  >
+                    <Calendar size={20} color={endMonthForMonthly === month ? '#FFFFFF' : '#8B4513'} />
+                    <Text
+                      style={[
+                        styles.monthSelectionText,
+                        endMonthForMonthly === month && styles.monthSelectionTextSelected,
+                      ]}
+                    >
+                      {formatMonthLabel(month)}
+                    </Text>
+                    {endMonthForMonthly === month && <View style={styles.selectedIndicator} />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <TouchableOpacity
+                style={[styles.saveButton, (!startMonthForMonthly || !endMonthForMonthly) && styles.saveButtonDisabled]}
+                onPress={() => {
+                  if (startMonthForMonthly && endMonthForMonthly) {
+                    if (startMonthForMonthly > endMonthForMonthly) {
+                      Alert.alert('エラー', '開始月は終了月より前である必要があります');
+                      return;
+                    }
+                    setShowMonthlyRangeModal(false);
+                  }
+                }}
+                disabled={!startMonthForMonthly || !endMonthForMonthly}
+              >
+                <Text style={styles.saveButtonText}>設定</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -812,6 +1096,18 @@ const styles = StyleSheet.create({
     color: '#333333',
   },
   changeRangeButton: {
+    fontSize: 14,
+    color: '#8B4513',
+    fontWeight: '600',
+  },
+  selectRangeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  selectRangeButtonText: {
     fontSize: 14,
     color: '#8B4513',
     fontWeight: '600',
