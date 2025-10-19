@@ -5,6 +5,7 @@ const SOUND_EFFECTS_KEY = 'sound_effects_enabled';
 
 let soundEffectsEnabled = true;
 let audioContext: AudioContext | null = null;
+let isAudioContextReady = false;
 
 export const initializeSounds = async () => {
   try {
@@ -13,12 +14,33 @@ export const initializeSounds = async () => {
 
     if (Platform.OS === 'web' && typeof AudioContext !== 'undefined') {
       audioContext = new AudioContext();
-      console.log('🔊 Web Audio API初期化完了');
+      console.log('🔊 Web Audio API初期化完了 (状態:', audioContext.state, ')');
+      
+      // AudioContextがsuspended状態の場合、ユーザーインタラクション後にresumeする
+      if (audioContext.state === 'suspended') {
+        console.log('⏸️ AudioContext suspended - ユーザーインタラクション待機中');
+      } else {
+        isAudioContextReady = true;
+        console.log('✅ AudioContext ready');
+      }
     }
 
     console.log('🔊 音響効果初期化完了');
   } catch (error) {
     console.error('音響効果初期化エラー:', error);
+  }
+};
+
+// AudioContextをユーザーインタラクション後に有効化
+export const resumeAudioContext = async () => {
+  if (Platform.OS === 'web' && audioContext && audioContext.state === 'suspended') {
+    try {
+      await audioContext.resume();
+      isAudioContextReady = true;
+      console.log('✅ AudioContext resumed - 音響効果が有効になりました');
+    } catch (error) {
+      console.error('AudioContext resume エラー:', error);
+    }
   }
 };
 
@@ -29,6 +51,17 @@ const playBeep = async (frequency: number, duration: number) => {
 
   try {
     if (Platform.OS === 'web' && audioContext) {
+      // AudioContextがsuspendedの場合、自動的にresumeを試みる
+      if (audioContext.state === 'suspended') {
+        await resumeAudioContext();
+      }
+      
+      // AudioContextが利用可能でない場合はスキップ
+      if (audioContext.state !== 'running') {
+        console.warn('⚠️ AudioContextが利用できません (状態:', audioContext.state, ')');
+        return;
+      }
+
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
 

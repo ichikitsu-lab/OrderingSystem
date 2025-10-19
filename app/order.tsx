@@ -12,7 +12,7 @@ import {
 import { Plus, Minus, ArrowLeft, ChevronDown, CircleCheck as CheckCircle, Clock } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useDatabase } from '@/hooks/useDatabase';
-import { playOrderConfirmSound } from '@/lib/soundEffects';
+import { playOrderConfirmSound, resumeAudioContext } from '@/lib/soundEffects';
 
 interface MenuItem {
   id: string;
@@ -365,7 +365,8 @@ export default function OrderScreen() {
               // 追加注文をクリア
               setPendingOrders([]);
 
-              // 注文確定音を再生
+              // 注文確定音を再生（AudioContextを有効化してから）
+              await resumeAudioContext();
               await playOrderConfirmSound();
 
               Alert.alert(

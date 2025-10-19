@@ -16,7 +16,7 @@ import { User, Bell, Shield, CircleHelp as HelpCircle, Store, Printer, Wifi, Cre
 // import { useDatabase } from '@/hooks/useDatabase';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { setSoundEffectsEnabled, getSoundEffectsEnabled } from '@/lib/soundEffects';
+import { setSoundEffectsEnabled, getSoundEffectsEnabled, resumeAudioContext, playOrderConfirmSound } from '@/lib/soundEffects';
 
 interface MenuItem {
   id: string;
@@ -291,6 +291,15 @@ export default function SettingsScreen() {
             onSwitchChange={async (value) => {
               setSoundEffects(value);
               await setSoundEffectsEnabled(value);
+              
+              // 有効にした場合はテスト音を再生
+              if (value) {
+                await resumeAudioContext();
+                await playOrderConfirmSound();
+                Alert.alert('音響効果', '🔊 音響効果が有効になりました！\n\nテスト音が再生されました。');
+              } else {
+                Alert.alert('音響効果', '🔇 音響効果が無効になりました。');
+              }
             }}
           />
         </View>

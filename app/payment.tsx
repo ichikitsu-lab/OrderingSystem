@@ -10,7 +10,7 @@ import {
 import { ArrowLeft, CreditCard, Receipt, CircleCheck as CheckCircle } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useDatabase } from '@/hooks/useDatabase';
-import { playPaymentCompleteSound } from '@/lib/soundEffects';
+import { playPaymentCompleteSound, resumeAudioContext } from '@/lib/soundEffects';
 
 interface CartItem {
   id: string;
@@ -135,7 +135,8 @@ export default function PaymentScreen() {
               
               console.log('🎉 支払い処理完了');
 
-              // 支払い完了音を再生
+              // 支払い完了音を再生（AudioContextを有効化してから）
+              await resumeAudioContext();
               await playPaymentCompleteSound();
 
               Alert.alert(
