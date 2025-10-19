@@ -652,7 +652,7 @@ export default function MenuScreen() {
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={styles.deleteMenuButton}
-                      onPress={() => deleteMenuItem(item.id)}
+                      onPress={() => softDeleteMenuItem(item.id)}
                     >
                       <Trash2 size={14} color="#FFFFFF" />
                       <Text style={styles.deleteMenuButtonText}>削除</Text>
