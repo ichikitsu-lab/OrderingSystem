@@ -9,20 +9,45 @@ let audioContext: AudioContext | null = null;
 let isAudioContextReady = false;
 let isAudioConfigured = false;
 
+// 音声ファイルのプリロード用
+const soundFiles = {
+  orderConfirm1: require('../assets/sounds/order_confirm_1.wav'),
+  orderConfirm2: require('../assets/sounds/order_confirm_2.wav'),
+  paymentComplete1: require('../assets/sounds/payment_complete_1.wav'),
+  paymentComplete2: require('../assets/sounds/payment_complete_2.wav'),
+  paymentComplete3: require('../assets/sounds/payment_complete_3.wav'),
+};
+
+// プリロードされたサウンドオブジェクトのキャッシュ
+let soundCache: { [key: string]: Audio.Sound } = {};
+
 export const initializeSounds = async () => {
   try {
     const enabled = await getSoundEffectsEnabled();
     soundEffectsEnabled = enabled;
 
     if (Platform.OS === 'ios' || Platform.OS === 'android') {
+      // オーディオモードを設定（iOSのサイレントモードでも音を再生）
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
         playsInSilentModeIOS: true,
         staysActiveInBackground: false,
         shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
       });
       isAudioConfigured = true;
       console.log('🔊 ネイティブ音響効果初期化完了');
+
+      // 音声ファイルをプリロード
+      try {
+        for (const [key, file] of Object.entries(soundFiles)) {
+          const { sound } = await Audio.Sound.createAsync(file);
+          soundCache[key] = sound;
+        }
+        console.log('🔊 音声ファイルプリロード完了');
+      } catch (error) {
+        console.error('音声ファイルプリロードエラー:', error);
+      }
     } else if (Platform.OS === 'web' && typeof AudioContext !== 'undefined') {
       audioContext = new AudioContext();
       console.log('🔊 Web Audio API初期化完了 (状態:', audioContext.state, ')');
@@ -53,91 +78,24 @@ export const resumeAudioContext = async () => {
   }
 };
 
-const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-
-  const base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let result = '';
-
-  for (let i = 0; i < binary.length; i += 3) {
-    const byte1 = binary.charCodeAt(i);
-    const byte2 = i + 1 < binary.length ? binary.charCodeAt(i + 1) : 0;
-    const byte3 = i + 2 < binary.length ? binary.charCodeAt(i + 2) : 0;
-
-    const enc1 = byte1 >> 2;
-    const enc2 = ((byte1 & 3) << 4) | (byte2 >> 4);
-    const enc3 = ((byte2 & 15) << 2) | (byte3 >> 6);
-    const enc4 = byte3 & 63;
-
-    result += base64Chars[enc1] + base64Chars[enc2];
-    result += i + 1 < binary.length ? base64Chars[enc3] : '=';
-    result += i + 2 < binary.length ? base64Chars[enc4] : '=';
-  }
-
-  return result;
-};
-
-const generateBeepWav = (frequency: number, duration: number): ArrayBuffer => {
-  const sampleRate = 44100;
-  const numSamples = Math.floor(sampleRate * (duration / 1000));
-  const buffer = new ArrayBuffer(44 + numSamples * 2);
-  const view = new DataView(buffer);
-
-  const writeString = (offset: number, string: string) => {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
-    }
-  };
-
-  writeString(0, 'RIFF');
-  view.setUint32(4, 36 + numSamples * 2, true);
-  writeString(8, 'WAVE');
-  writeString(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeString(36, 'data');
-  view.setUint32(40, numSamples * 2, true);
-
-  for (let i = 0; i < numSamples; i++) {
-    const t = i / sampleRate;
-    const sample = Math.sin(2 * Math.PI * frequency * t) * 0.3;
-    const value = Math.max(-1, Math.min(1, sample));
-    view.setInt16(44 + i * 2, value * 0x7FFF, true);
-  }
-
-  return buffer;
-};
-
-const playBeepNative = async (frequency: number, duration: number): Promise<void> => {
+// プリロードされた音声を再生
+const playCachedSound = async (soundKey: string): Promise<void> => {
   if (Platform.OS !== 'ios' && Platform.OS !== 'android') {
     return;
   }
 
   try {
-    const soundObject = new Audio.Sound();
-
-    const audioBuffer = generateBeepWav(frequency, duration);
-    const base64Audio = arrayBufferToBase64(audioBuffer);
-    const uri = `data:audio/wav;base64,${base64Audio}`;
-
-    await soundObject.loadAsync({ uri });
-    await soundObject.playAsync();
-
-    setTimeout(async () => {
-      await soundObject.unloadAsync();
-    }, duration + 100);
+    const sound = soundCache[soundKey];
+    if (sound) {
+      // 再生位置をリセット
+      await sound.setPositionAsync(0);
+      // 再生
+      await sound.playAsync();
+    } else {
+      console.warn(`⚠️ 音声ファイルが見つかりません: ${soundKey}`);
+    }
   } catch (error) {
-    console.error('ネイティブビープ音再生エラー:', error);
+    console.error('音声再生エラー:', error);
   }
 };
 
@@ -149,10 +107,7 @@ const playBeep = async (frequency: number, duration: number, delay: number = 0):
   return new Promise<void>((resolve) => {
     setTimeout(async () => {
       try {
-        if (Platform.OS === 'ios' || Platform.OS === 'android') {
-          await playBeepNative(frequency, duration);
-          resolve();
-        } else if (Platform.OS === 'web' && audioContext) {
+        if (Platform.OS === 'web' && audioContext) {
           if (audioContext.state !== 'running') {
             console.warn('⚠️ AudioContextが利用できません (状態:', audioContext.state, ')');
             resolve();
@@ -205,8 +160,12 @@ export const playOrderConfirmSound = async () => {
     await resumeAudioContext();
 
     if (Platform.OS === 'ios' || Platform.OS === 'android') {
-      await playBeep(800, 200, 0);
-      await playBeep(1000, 200, 250);
+      // 1つ目の音
+      await playCachedSound('orderConfirm1');
+      // 少し待機
+      await new Promise(resolve => setTimeout(resolve, 250));
+      // 2つ目の音
+      await playCachedSound('orderConfirm2');
       console.log('🔊 注文確定音再生 (ネイティブ)');
     } else if (Platform.OS === 'web' && audioContext && audioContext.state === 'running') {
       await playBeep(800, 200, 0);
@@ -228,9 +187,14 @@ export const playPaymentCompleteSound = async () => {
     await resumeAudioContext();
 
     if (Platform.OS === 'ios' || Platform.OS === 'android') {
-      await playBeep(600, 150, 0);
-      await playBeep(800, 150, 200);
-      await playBeep(1000, 300, 400);
+      // 1つ目の音
+      await playCachedSound('paymentComplete1');
+      await new Promise(resolve => setTimeout(resolve, 200));
+      // 2つ目の音
+      await playCachedSound('paymentComplete2');
+      await new Promise(resolve => setTimeout(resolve, 200));
+      // 3つ目の音
+      await playCachedSound('paymentComplete3');
       console.log('🔊 支払い完了音再生 (ネイティブ)');
     } else if (Platform.OS === 'web' && audioContext && audioContext.state === 'running') {
       await playBeep(600, 150, 0);
@@ -261,6 +225,18 @@ export const getSoundEffectsEnabled = async (): Promise<boolean> => {
 
 export const cleanupSounds = async () => {
   try {
+    // ネイティブのサウンドキャッシュをクリーンアップ
+    if (Platform.OS === 'ios' || Platform.OS === 'android') {
+      for (const [key, sound] of Object.entries(soundCache)) {
+        try {
+          await sound.unloadAsync();
+        } catch (error) {
+          console.error(`サウンド ${key} のアンロードエラー:`, error);
+        }
+      }
+      soundCache = {};
+    }
+    
     if (Platform.OS === 'web' && audioContext) {
       await audioContext.close();
       audioContext = null;
