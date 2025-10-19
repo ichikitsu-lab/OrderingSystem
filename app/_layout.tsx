@@ -11,26 +11,30 @@ export default function RootLayout() {
   useEffect(() => {
     initializeSounds();
 
-    // ドキュメントクリック時にAudioContextを有効化（Web専用）
-    const handleFirstInteraction = () => {
-      resumeAudioContext();
+    // ドキュメントクリック/タッチ時にAudioContextを有効化（Web/iOS Safari対応）
+    const handleFirstInteraction = async () => {
+      await resumeAudioContext();
       // 一度実行したら削除
       if (typeof document !== 'undefined') {
-        document.removeEventListener('click', handleFirstInteraction);
-        document.removeEventListener('touchstart', handleFirstInteraction);
+        document.removeEventListener('click', handleFirstInteraction, true);
+        document.removeEventListener('touchstart', handleFirstInteraction, true);
+        document.removeEventListener('touchend', handleFirstInteraction, true);
       }
     };
 
     if (typeof document !== 'undefined') {
-      document.addEventListener('click', handleFirstInteraction);
-      document.addEventListener('touchstart', handleFirstInteraction);
+      // キャプチャフェーズで確実にイベントを捕捉
+      document.addEventListener('click', handleFirstInteraction, true);
+      document.addEventListener('touchstart', handleFirstInteraction, true);
+      document.addEventListener('touchend', handleFirstInteraction, true);
     }
 
     return () => {
       cleanupSounds();
       if (typeof document !== 'undefined') {
-        document.removeEventListener('click', handleFirstInteraction);
-        document.removeEventListener('touchstart', handleFirstInteraction);
+        document.removeEventListener('click', handleFirstInteraction, true);
+        document.removeEventListener('touchstart', handleFirstInteraction, true);
+        document.removeEventListener('touchend', handleFirstInteraction, true);
       }
     };
   }, []);

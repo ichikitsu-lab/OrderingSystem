@@ -294,9 +294,13 @@ export default function SettingsScreen() {
               
               // 有効にした場合はテスト音を再生
               if (value) {
+                // iOSのため、AudioContextを明示的にresume
                 await resumeAudioContext();
-                await playOrderConfirmSound();
-                Alert.alert('音響効果', '🔊 音響効果が有効になりました！\n\nテスト音が再生されました。');
+                // 少し待ってから音を再生
+                setTimeout(async () => {
+                  await playOrderConfirmSound();
+                }, 100);
+                Alert.alert('音響効果', '🔊 音響効果が有効になりました！\n\nテスト音が再生されます。音が聞こえない場合は、デバイスの音量とマナーモードを確認してください。');
               } else {
                 Alert.alert('音響効果', '🔇 音響効果が無効になりました。');
               }

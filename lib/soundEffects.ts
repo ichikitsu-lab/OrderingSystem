@@ -44,45 +44,56 @@ export const resumeAudioContext = async () => {
   }
 };
 
-const playBeep = async (frequency: number, duration: number) => {
+const playBeep = async (frequency: number, duration: number, delay: number = 0): Promise<void> => {
   if (!soundEffectsEnabled) {
     return;
   }
 
-  try {
-    if (Platform.OS === 'web' && audioContext) {
-      // AudioContextがsuspendedの場合、自動的にresumeを試みる
-      if (audioContext.state === 'suspended') {
-        await resumeAudioContext();
+  return new Promise<void>((resolve) => {
+    try {
+      if (Platform.OS === 'web' && audioContext) {
+        // AudioContextが利用可能でない場合はスキップ
+        if (audioContext.state !== 'running') {
+          console.warn('⚠️ AudioContextが利用できません (状態:', audioContext.state, ')');
+          resolve();
+          return;
+        }
+
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        oscillator.frequency.value = frequency;
+        oscillator.type = 'sine';
+
+        const startTime = audioContext.currentTime + delay / 1000;
+        const endTime = startTime + duration / 1000;
+
+        gainNode.gain.setValueAtTime(0.3, startTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, endTime);
+
+        oscillator.start(startTime);
+        oscillator.stop(endTime);
+        
+        // 音の終了を待つ
+        oscillator.onended = () => {
+          resolve();
+        };
+        
+        // タイムアウト保護
+        setTimeout(() => {
+          resolve();
+        }, delay + duration + 100);
+      } else {
+        resolve();
       }
-      
-      // AudioContextが利用可能でない場合はスキップ
-      if (audioContext.state !== 'running') {
-        console.warn('⚠️ AudioContextが利用できません (状態:', audioContext.state, ')');
-        return;
-      }
-
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-
-      oscillator.frequency.value = frequency;
-      oscillator.type = 'sine';
-
-      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(
-        0.01,
-        audioContext.currentTime + duration / 1000
-      );
-
-      oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + duration / 1000);
+    } catch (error) {
+      console.error('ビープ音再生エラー:', error);
+      resolve();
     }
-  } catch (error) {
-    console.error('ビープ音再生エラー:', error);
-  }
+  });
 };
 
 export const playOrderConfirmSound = async () => {
@@ -92,9 +103,15 @@ export const playOrderConfirmSound = async () => {
   }
 
   try {
-    await playBeep(800, 200);
-    setTimeout(() => playBeep(1000, 200), 150);
-    console.log('🔊 注文確定音再生');
+    // AudioContextを確実に有効化
+    await resumeAudioContext();
+    
+    if (Platform.OS === 'web' && audioContext && audioContext.state === 'running') {
+      // Web Audio APIで全ての音を一度にスケジュール
+      await playBeep(800, 200, 0);
+      await playBeep(1000, 200, 250);
+      console.log('🔊 注文確定音再生');
+    }
   } catch (error) {
     console.error('注文確定音再生エラー:', error);
   }
@@ -107,10 +124,16 @@ export const playPaymentCompleteSound = async () => {
   }
 
   try {
-    await playBeep(600, 150);
-    setTimeout(() => playBeep(800, 150), 100);
-    setTimeout(() => playBeep(1000, 300), 200);
-    console.log('🔊 支払い完了音再生');
+    // AudioContextを確実に有効化
+    await resumeAudioContext();
+    
+    if (Platform.OS === 'web' && audioContext && audioContext.state === 'running') {
+      // Web Audio APIで全ての音を一度にスケジュール
+      await playBeep(600, 150, 0);
+      await playBeep(800, 150, 200);
+      await playBeep(1000, 300, 400);
+      console.log('🔊 支払い完了音再生');
+    }
   } catch (error) {
     console.error('支払い完了音再生エラー:', error);
   }
