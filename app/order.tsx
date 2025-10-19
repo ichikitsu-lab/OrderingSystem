@@ -12,6 +12,7 @@ import {
 import { Plus, Minus, ArrowLeft, ChevronDown, CircleCheck as CheckCircle, Clock } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useDatabase } from '@/hooks/useDatabase';
+import { playOrderConfirmSound } from '@/lib/soundEffects';
 
 interface MenuItem {
   id: string;
@@ -363,7 +364,10 @@ export default function OrderScreen() {
               
               // 追加注文をクリア
               setPendingOrders([]);
-              
+
+              // 注文確定音を再生
+              await playOrderConfirmSound();
+
               Alert.alert(
                 '注文確定完了',
                 `🎉 テーブル ${tableNumber}の追加注文が確定されました！\n\n📝 ${pendingOrders.length}品目の追加注文\n💰 追加金額: ¥${getPendingTotal().toLocaleString()}\n\n支払いは注文画面の支払いボタンから行えます。`,

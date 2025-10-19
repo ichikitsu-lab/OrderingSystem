@@ -16,6 +16,7 @@ import { User, Bell, Shield, CircleHelp as HelpCircle, Store, Printer, Wifi, Cre
 // import { useDatabase } from '@/hooks/useDatabase';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { setSoundEffectsEnabled, getSoundEffectsEnabled } from '@/lib/soundEffects';
 
 interface MenuItem {
   id: string;
@@ -63,7 +64,17 @@ export default function SettingsScreen() {
   React.useEffect(() => {
     // checkSupabaseConfig(); // エンジニア向け機能として非表示
     loadStoreName();
+    loadSoundEffectsSetting();
   }, []);
+
+  const loadSoundEffectsSetting = async () => {
+    try {
+      const enabled = await getSoundEffectsEnabled();
+      setSoundEffects(enabled);
+    } catch (error) {
+      console.error('音響効果設定読み込みエラー:', error);
+    }
+  };
 
   const loadStoreName = async () => {
     try {
@@ -277,7 +288,10 @@ export default function SettingsScreen() {
             subtitle="ボタンタップ音とアラート音"
             showSwitch={true}
             switchValue={soundEffects}
-            onSwitchChange={setSoundEffects}
+            onSwitchChange={async (value) => {
+              setSoundEffects(value);
+              await setSoundEffectsEnabled(value);
+            }}
           />
         </View>
 

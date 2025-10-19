@@ -10,6 +10,7 @@ import {
 import { ArrowLeft, CreditCard, Receipt, CircleCheck as CheckCircle } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useDatabase } from '@/hooks/useDatabase';
+import { playPaymentCompleteSound } from '@/lib/soundEffects';
 
 interface CartItem {
   id: string;
@@ -133,6 +134,10 @@ export default function PaymentScreen() {
               }
               
               console.log('🎉 支払い処理完了');
+
+              // 支払い完了音を再生
+              await playPaymentCompleteSound();
+
               Alert.alert(
                 '支払い完了',
                 `🎉 テーブル ${currentTableNumber}の会計が完了しました！\n\n💰 合計金額: ¥${getTotalAmount().toLocaleString()}\n📝 注文履歴に保存されました\n🔄 テーブルが空席に戻りました`,
