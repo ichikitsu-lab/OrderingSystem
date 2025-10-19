@@ -222,6 +222,231 @@ const history = await database.getOrderHistory();
 ### RLSエラー
 → RLSポリシーが正しく設定されているか確認
 
+## 🆕 複数デバイス間での注文同期設定（2025年10月19日追加）
+
+### 問題点
+現在、支払い前の注文内容が複数デバイス間で同期されていません。
+- ✅ 支払い後の履歴：すべてのデバイスで同じ
+- ❌ 支払い前の注文：同期されない
+
+### 解決策
+`orders`テーブルの`status`カラムを活用して、注文の状態を管理します。
+
+#### 注文ステータスの種類
+- **pending**: 未確定（カートに追加された状態）
+- **confirmed**: 注文確定済み（厨房に送信済み）
+- **completed**: 支払い完了（order_historyに移動済み）
+
+### 📋 セットアップ手順（3ステップ）
+
+#### ⚠️ 重要：この作業を始める前に
+Supabaseのマイグレーションファイル `supabase/migrations/20251019_order_status_sync.sql` を確認してください。
+
+#### 実行方法
+
+1. **Supabase管理画面にアクセス**
+   - https://supabase.com にログイン
+   - プロジェクトを選択
+   - 左サイドバーの「SQL Editor」をクリック
+
+2. **以下の3つのSQLを順番に実行**
+
+---
+
+#### 🔹 ステップ1: ordersテーブルのstatusカラム定義を更新
+
+```sql
+-- 既存の制約を削除
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
+
+-- 新しい制約を追加（pending, confirmed, completedの3つのステータス）
+ALTER TABLE orders ADD CONSTRAINT orders_status_check CHECK (
+  status IN ('pending', 'confirmed', 'completed')
+);
+
+-- statusカラムのコメントを更新
+COMMENT ON COLUMN orders.status IS '注文状態: pending（未確定・カート内）, confirmed（注文確定済み）, completed（支払い完了）';
+
+-- 確認メッセージ
+DO $$
+BEGIN
+  RAISE NOTICE '✅ ステップ1完了: ordersテーブルのstatusカラム定義を更新しました';
+  RAISE NOTICE '   - pending: 未確定（カート内）';
+  RAISE NOTICE '   - confirmed: 注文確定済み';
+  RAISE NOTICE '   - completed: 支払い完了';
+END $$;
+```
+
+**✅ 期待される結果**: 
+- Success（成功）メッセージが表示される
+- ordersテーブルのstatusカラムが更新される
+
+---
+
+#### 🔹 ステップ2: 注文ステータスごとのビューを作成
+
+```sql
+-- 未確定注文ビュー（pending）
+CREATE OR REPLACE VIEW pending_orders AS
+SELECT 
+  o.id,
+  o.table_id,
+  o.menu_item_id,
+  o.quantity,
+  o.unit_price,
+  o.status,
+  o.created_at,
+  o.updated_at,
+  t.number as table_number,
+  m.name as menu_item_name,
+  m.category as menu_category,
+  (o.quantity * o.unit_price) as total_price
+FROM orders o
+LEFT JOIN tables t ON o.table_id = t.id
+LEFT JOIN menu_items m ON o.menu_item_id = m.id
+WHERE o.status = 'pending' AND o.deleted_at IS NULL;
+
+COMMENT ON VIEW pending_orders IS '未確定注文（カート内）のみを表示';
+
+-- 確定済み注文ビュー（confirmed）
+CREATE OR REPLACE VIEW confirmed_orders AS
+SELECT 
+  o.id,
+  o.table_id,
+  o.menu_item_id,
+  o.quantity,
+  o.unit_price,
+  o.status,
+  o.created_at,
+  o.updated_at,
+  t.number as table_number,
+  m.name as menu_item_name,
+  m.category as menu_category,
+  (o.quantity * o.unit_price) as total_price
+FROM orders o
+LEFT JOIN tables t ON o.table_id = t.id
+LEFT JOIN menu_items m ON o.menu_item_id = m.id
+WHERE o.status = 'confirmed' AND o.deleted_at IS NULL;
+
+COMMENT ON VIEW confirmed_orders IS '確定済み注文（厨房送信済み）のみを表示';
+
+-- 完了済み注文ビュー（completed）
+CREATE OR REPLACE VIEW completed_orders AS
+SELECT 
+  o.id,
+  o.table_id,
+  o.menu_item_id,
+  o.quantity,
+  o.unit_price,
+  o.status,
+  o.created_at,
+  o.updated_at,
+  t.number as table_number,
+  m.name as menu_item_name,
+  m.category as menu_category,
+  (o.quantity * o.unit_price) as total_price
+FROM orders o
+LEFT JOIN tables t ON o.table_id = t.id
+LEFT JOIN menu_items m ON o.menu_item_id = m.id
+WHERE o.status = 'completed' AND o.deleted_at IS NULL;
+
+COMMENT ON VIEW completed_orders IS '完了済み注文（支払い済み）のみを表示';
+
+-- 確認メッセージ
+DO $$
+BEGIN
+  RAISE NOTICE '✅ ステップ2完了: 注文ステータスごとのビューを作成しました';
+  RAISE NOTICE '   - pending_orders: 未確定注文ビュー';
+  RAISE NOTICE '   - confirmed_orders: 確定済み注文ビュー';
+  RAISE NOTICE '   - completed_orders: 完了済み注文ビュー';
+END $$;
+```
+
+**✅ 期待される結果**:
+- Success（成功）メッセージが表示される
+- 3つのビュー（pending_orders, confirmed_orders, completed_orders）が作成される
+
+---
+
+#### 🔹 ステップ3: リアルタイム同期の設定確認と統計ビュー作成
+
+```sql
+-- リアルタイム設定の確認（既に設定済みなので、確認のみ）
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relname = 'orders' 
+    AND c.relreplident = 'f'
+  ) THEN
+    RAISE NOTICE '✅ ordersテーブルのリアルタイム設定は既に有効です（REPLICA IDENTITY FULL）';
+  ELSE
+    RAISE NOTICE '⚠️ ordersテーブルのリアルタイム設定を確認してください';
+    -- 念のため設定
+    ALTER TABLE orders REPLICA IDENTITY FULL;
+    RAISE NOTICE '✅ ordersテーブルにREPLICA IDENTITY FULLを設定しました';
+  END IF;
+END $$;
+
+-- テーブルごとの注文ステータス統計ビュー
+CREATE OR REPLACE VIEW table_order_status_stats AS
+SELECT 
+  t.id as table_id,
+  t.number as table_number,
+  t.status as table_status,
+  COUNT(CASE WHEN o.status = 'pending' THEN 1 END) as pending_count,
+  COUNT(CASE WHEN o.status = 'confirmed' THEN 1 END) as confirmed_count,
+  COUNT(CASE WHEN o.status = 'completed' THEN 1 END) as completed_count,
+  SUM(CASE WHEN o.status = 'pending' THEN o.quantity * o.unit_price ELSE 0 END) as pending_amount,
+  SUM(CASE WHEN o.status = 'confirmed' THEN o.quantity * o.unit_price ELSE 0 END) as confirmed_amount,
+  SUM(CASE WHEN o.status = 'completed' THEN o.quantity * o.unit_price ELSE 0 END) as completed_amount,
+  SUM(o.quantity * o.unit_price) as total_amount
+FROM tables t
+LEFT JOIN orders o ON t.id = o.table_id AND o.deleted_at IS NULL
+WHERE t.deleted_at IS NULL
+GROUP BY t.id, t.number, t.status
+ORDER BY t.number;
+
+COMMENT ON VIEW table_order_status_stats IS 'テーブルごとの注文ステータス統計（金額含む）';
+
+-- 確認メッセージ
+DO $$
+BEGIN
+  RAISE NOTICE '✅ ステップ3完了: リアルタイム同期確認と統計ビューを作成しました';
+  RAISE NOTICE '   - ordersテーブルのリアルタイム同期: 有効';
+  RAISE NOTICE '   - table_order_status_stats: テーブル別統計ビュー作成';
+END $$;
+```
+
+**✅ 期待される結果**:
+- Success（成功）メッセージが表示される
+- リアルタイム同期が有効であることが確認される
+- 統計ビュー（table_order_status_stats）が作成される
+
+---
+
+### 🎉 セットアップ完了の確認
+
+すべてのステップが完了すると、以下が実現されます：
+
+- ✅ `orders`テーブルに3つのステータス（pending, confirmed, completed）
+- ✅ 各ステータスごとのビュー（pending_orders, confirmed_orders, completed_orders）
+- ✅ リアルタイム同期が有効（複数デバイス間で注文が同期）
+- ✅ 統計ビュー（table_order_status_stats）
+
+### 📱 アプリケーション側の対応
+
+データベース設定後、アプリケーションコード（`app/order.tsx`など）を更新して：
+1. **pendingOrders**（未確定注文）をデータベースに保存（status='pending'）
+2. **注文確定時**にステータスを'confirmed'に更新
+3. **支払い完了時**にステータスを'completed'に更新
+
+これにより、複数のデバイス間で注文内容がリアルタイムに同期されます。
+
+---
+
 ## 開発環境の起動
 
 1. `npm run dev` - Expoサーバー起動
